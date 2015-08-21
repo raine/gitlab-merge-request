@@ -1,0 +1,51 @@
+#!/usr/bin/env ruby
+
+# setup: gem install gitlab git
+# usage: gitlab-merge-request
+# makes a merge request for the current branch that has already been pushed
+# to origin
+
+require "gitlab"
+require "git"
+require "tempfile"
+
+GITLAB_BASE_URL = ENV['GITLAB_API_ENDPOINT'].sub '/api/v3', ''
+@git = Git.open(Dir.pwd)
+
+def parse_remote_url(url)
+  m = url.match(%r{:(.*)/(.*)\.git})
+  { group: m[1], name: m[2] }
+end
+
+def find_gitlab_project(group, name)
+  Gitlab.project_search(name).find do |proj|
+    proj.namespace.name == group
+  end
+end
+
+def cwd_gitlab_project
+  project = parse_remote_url @git.config['remote.origin.url']
+  find_gitlab_project project[:group], project[:name]
+end
+
+def write_merge_request_message
+  last_commit_message = @git.object('HEAD').message
+  Tempfile.open "merge-request-message" do |f|
+    f << last_commit_message
+    f.close
+    system "#{ENV['EDITOR']} #{f.path}"
+    f.open
+    f.read
+  end
+end
+
+def format_url(*args)
+  "#{GITLAB_BASE_URL}/#{args.join '/'}"
+end
+
+current_branch = @git.branches.find(&:current).name
+project = cwd_gitlab_project
+merge_request =  Gitlab.create_merge_request project.id, write_merge_request_message,
+  :source_branch => current_branch, :target_branch => 'master'
+
+puts format_url project.namespace.name, project.name, 'merge_requests', merge_request.iid
