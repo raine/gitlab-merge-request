@@ -14,18 +14,19 @@ GITLAB_BASE_URL = ENV['GITLAB_API_ENDPOINT'].sub '/api/v3', ''
 
 def parse_remote_url(url)
   m = url.match(%r{:(.*)/(.*)\.git})
-  { group: m[1], name: m[2] }
+  { group: m[1], path: m[2] }
 end
 
-def find_gitlab_project(group, name)
-  Gitlab.project_search(name).find do |proj|
-    proj.namespace.name == group
-  end
+def find_gitlab_project(group, path)
+
+  groups = Gitlab.group_search(group)
+
+  Gitlab.group_projects(groups[0].id).detect { |proj| proj.path == path }
 end
 
 def cwd_gitlab_project
   project = parse_remote_url @git.config['remote.origin.url']
-  find_gitlab_project project[:group], project[:name]
+  find_gitlab_project project[:group], project[:path]
 end
 
 def write_merge_request_message
@@ -45,7 +46,8 @@ end
 
 current_branch = @git.branches.find(&:current).name
 project = cwd_gitlab_project
-merge_request =  Gitlab.create_merge_request project.id, write_merge_request_message,
-  :source_branch => current_branch, :target_branch => 'master'
 
-puts format_url project.namespace.name, project.name, 'merge_requests', merge_request.iid
+merge_request =  Gitlab.create_merge_request project.id, write_merge_request_message,
+  :source_branch => current_branch, :target_branch => project.default_branch
+
+puts format_url project.path_with_namespace, 'merge_requests' , merge_request.iid
