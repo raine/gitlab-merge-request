@@ -21,7 +21,7 @@ def find_gitlab_project(group, path)
 
   groups = Gitlab.group_search(group)
 
-  Gitlab.group_projects(groups[0].id).detect { |proj| proj.path == path }
+  Gitlab.group_projects(groups[0].id, {per_page: 1000}).detect { |proj| proj.path == path }
 end
 
 def cwd_gitlab_project
