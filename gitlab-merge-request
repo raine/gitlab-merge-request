@@ -14,18 +14,35 @@ GITLAB_BASE_URL = ENV['GITLAB_API_ENDPOINT'].sub '/api/v3', ''
 
 def parse_remote_url(url)
   m = url.match(%r{:(.*)/(.*)\.git})
-  { group: m[1], name: m[2] }
+  { namespace: m[1], path: m[2] }
 end
 
-def find_gitlab_project(group, name)
-  Gitlab.project_search(name).find do |proj|
-    proj.namespace.name == group
+def find_gitlab_project(namespace, path)
+
+  #look for a group corresponding to namespace
+  groups = Gitlab.group_search(namespace)
+
+  if groups.any?
+    #we find a group corresponding to "group" var
+    projects = Gitlab.group_projects(groups[0].id, {per_page: 1000})
+  else
+    #fallback: looking for projects with corresponding namespace
+    projects = Gitlab.projects({'search': namespace})
+
+    if not projects.any?
+      raise sprintf("Unable find project with namespace '%s' and path '%s'", namespace, path)
+    end
   end
+
+  path_with_namespace = namespace + '/' + path
+
+  #only return the right one (same namespace and path)
+  projects.detect { |proj| proj.path_with_namespace == path_with_namespace }
 end
 
 def cwd_gitlab_project
   project = parse_remote_url @git.config['remote.origin.url']
-  find_gitlab_project project[:group], project[:name]
+  find_gitlab_project project[:namespace], project[:path]
 end
 
 def write_merge_request_message
@@ -45,7 +62,8 @@ end
 
 current_branch = @git.branches.find(&:current).name
 project = cwd_gitlab_project
-merge_request =  Gitlab.create_merge_request project.id, write_merge_request_message,
-  :source_branch => current_branch, :target_branch => 'master'
 
-puts format_url project.namespace.name, project.name, 'merge_requests', merge_request.iid
+merge_request =  Gitlab.create_merge_request project.id, write_merge_request_message,
+  :source_branch => current_branch, :target_branch => project.default_branch
+
+puts format_url project.path_with_namespace, 'merge_requests' , merge_request.iid
